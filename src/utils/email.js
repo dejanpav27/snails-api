@@ -11,30 +11,57 @@ function formatDate(isoString) {
   });
 }
 
-async function sendBookingConfirmation({ client, service, booking }) {
-  const dateStr = formatDate(booking.booked_at);
+function formatPrice(val) {
+  return `${Number(val).toFixed(0)} RSD`;
+}
+
+// Accepts either single service or array of services
+function normalizeServices(services, service) {
+  if (services && Array.isArray(services)) return services;
+  if (service) return [service];
+  return [];
+}
+
+async function sendBookingConfirmation({ client, services, service, totalDuration, totalPrice, booking }) {
+  const allServices   = normalizeServices(services, service);
+  const totalDur      = totalDuration || allServices.reduce((s, x) => s + x.duration_mins, 0);
+  const totalPriceVal = totalPrice    || allServices.reduce((s, x) => s + Number(x.price), 0);
+  const dateStr       = formatDate(booking.booked_at);
+
+  const serviceRows = allServices.map(s => `
+    <tr>
+      <td style="color:#993556;padding:6px 0">${s.name}</td>
+      <td style="color:#72243E;font-weight:500;text-align:right">${s.duration_mins} min · ${formatPrice(s.price)}</td>
+    </tr>
+  `).join('');
 
   if (client.email) {
     await resend.emails.send({
       from: FROM,
       to: client.email,
-      subject: `Your Snails booking is confirmed — ${service.name}`,
+      subject: `Your Snails booking is confirmed`,
       html: `
         <div style="font-family:sans-serif;max-width:520px;margin:0 auto;color:#3d3d3a">
           <div style="background:#fff0f5;padding:24px;border-radius:12px;margin-bottom:20px;text-align:center">
             <h1 style="color:#72243E;font-size:22px;margin:0">Snails ✦</h1>
-            <p style="color:#d4537e;margin:4px 0 0;font-size:13px">nail studio</p>
+            <p style="color:#d4537e;margin:4px 0 0;font-size:13px">nails by Sara Pudar</p>
           </div>
           <h2 style="color:#72243E;font-size:18px">You're all booked, ${client.name}!</h2>
           <div style="background:#fff0f5;border:1px solid #ffd6e7;border-radius:10px;padding:16px;margin:16px 0">
             <table style="width:100%;font-size:14px;border-collapse:collapse">
-              <tr><td style="color:#993556;padding:6px 0">Service</td><td style="color:#72243E;font-weight:500;text-align:right">${service.name}</td></tr>
-              <tr><td style="color:#993556;padding:6px 0">Date &amp; time</td><td style="color:#72243E;font-weight:500;text-align:right">${dateStr}</td></tr>
-              <tr><td style="color:#993556;padding:6px 0">Duration</td><td style="color:#72243E;font-weight:500;text-align:right">${service.duration_mins} min</td></tr>
-              <tr><td style="color:#993556;padding:6px 0">Price</td><td style="color:#d4537e;font-weight:500;text-align:right">£${Number(service.price).toFixed(2)}</td></tr>
+              ${serviceRows}
+              <tr><td colspan="2" style="border-top:1px solid #ffd6e7;padding-top:8px"></td></tr>
+              <tr>
+                <td style="color:#72243E;font-weight:500;padding:6px 0">Total</td>
+                <td style="color:#d4537e;font-weight:500;text-align:right">${totalDur} min · ${formatPrice(totalPriceVal)}</td>
+              </tr>
+              <tr>
+                <td style="color:#993556;padding:6px 0">Date &amp; time</td>
+                <td style="color:#72243E;font-weight:500;text-align:right">${dateStr}</td>
+              </tr>
             </table>
           </div>
-          <p style="color:#993556;font-size:13px">Need to cancel or reschedule? Just reply to this email.</p>
+          <p style="color:#993556;font-size:13px">Need to cancel or reschedule? Please give at least 24 hours notice.</p>
           <p style="color:#d4537e;font-size:12px;margin-top:24px">Snails nail studio — see you soon ✦</p>
         </div>
       `,
@@ -45,7 +72,7 @@ async function sendBookingConfirmation({ client, service, booking }) {
     await resend.emails.send({
       from: FROM,
       to: ADMIN_EMAIL,
-      subject: `New booking — ${client.name} — ${service.name}`,
+      subject: `New booking — ${client.name}`,
       html: `
         <div style="font-family:sans-serif;max-width:520px;margin:0 auto;color:#3d3d3a">
           <h2 style="color:#72243E">New booking received</h2>
@@ -53,7 +80,11 @@ async function sendBookingConfirmation({ client, service, booking }) {
             <table style="width:100%;font-size:14px;border-collapse:collapse">
               <tr><td style="color:#993556;padding:6px 0">Client</td><td style="color:#72243E;font-weight:500;text-align:right">${client.name}</td></tr>
               <tr><td style="color:#993556;padding:6px 0">Phone</td><td style="color:#72243E;text-align:right">${client.phone || '—'}</td></tr>
-              <tr><td style="color:#993556;padding:6px 0">Service</td><td style="color:#72243E;font-weight:500;text-align:right">${service.name}</td></tr>
+              <tr><td style="color:#993556;padding:6px 0">Email</td><td style="color:#72243E;text-align:right">${client.email || '—'}</td></tr>
+              <tr><td colspan="2" style="border-top:1px solid #ffd6e7;padding-top:8px"></td></tr>
+              ${serviceRows}
+              <tr><td colspan="2" style="border-top:1px solid #ffd6e7;padding-top:8px"></td></tr>
+              <tr><td style="color:#72243E;font-weight:500;padding:6px 0">Total</td><td style="color:#d4537e;font-weight:500;text-align:right">${totalDur} min · ${formatPrice(totalPriceVal)}</td></tr>
               <tr><td style="color:#993556;padding:6px 0">Date &amp; time</td><td style="color:#72243E;font-weight:500;text-align:right">${dateStr}</td></tr>
             </table>
           </div>
@@ -77,6 +108,7 @@ async function sendCancellationEmail({ client, service, booking }) {
         </div>
         <h2 style="color:#72243E">Booking cancelled</h2>
         <p style="color:#993556">Your appointment for <strong>${service.name}</strong> on ${dateStr} has been cancelled.</p>
+        <p style="color:#993556;font-size:13px;margin-top:12px">Want to rebook? Visit our booking page.</p>
         <p style="color:#d4537e;font-size:12px;margin-top:24px">Snails nail studio ✦</p>
       </div>
     `,
