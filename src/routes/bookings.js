@@ -94,6 +94,22 @@ router.patch('/:id/status', requireAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
+// DELETE /bookings/:id — permanently delete a cancelled booking (admin only)
+router.delete('/:id', requireAuth, async (req, res) => {
+  try {
+    const check = await db.query('SELECT status FROM bookings WHERE id = $1', [req.params.id]);
+    if (check.rowCount === 0) return res.status(404).json({ error: 'Booking not found' });
+    if (check.rows[0].status !== 'cancelled') {
+      return res.status(400).json({ error: 'Only cancelled bookings can be deleted. Cancel it first.' });
+    }
+    await db.query('DELETE FROM bookings WHERE id = $1', [req.params.id]);
+    res.json({ message: 'Booking deleted' });
+  } catch (err) {
+    console.error('Delete booking error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 router.post('/admin', requireAuth, async (req, res) => {
   const { client_id, service_id, booked_at, client_notes, status } = req.body;
   if (!client_id || !service_id || !booked_at) return res.status(400).json({ error: 'client_id, service_id and booked_at are required' });
