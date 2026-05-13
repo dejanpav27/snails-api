@@ -1,14 +1,14 @@
 const router = require('express').Router();
 const db = require('../db');
 
-const WORK_START = 9;
-const WORK_END   = 18;
-const SLOT_STEP  = 30;
+const SLOT_STEP = 30;
 
-function generateSlots(date) {
+function generateSlots(date, openHour, openMin, closeHour, closeMin) {
   const slots = [];
-  for (let h = WORK_START; h < WORK_END; h++) {
+  for (let h = openHour; h <= closeHour; h++) {
     for (let m = 0; m < 60; m += SLOT_STEP) {
+      if (h === openHour && m < openMin) continue;
+      if (h === closeHour && m >= closeMin) continue;
       const slot = new Date(date);
       slot.setHours(h, m, 0, 0);
       slots.push(slot);
@@ -22,48 +22,49 @@ router.get('/', async (req, res) => {
   if (!date || !service_id) return res.status(400).json({ error: 'date and service_id are required' });
 
   const targetDate = new Date(date);
-  if (isNaN(targetDate.getTime())) return res.status(400).json({ error: 'Invalid date format. Use YYYY-MM-DD' });
+  if (isNaN(targetDate.getTime())) return res.status(400).json({ error: 'Invalid date' });
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const today = new Date(); today.setHours(0,0,0,0);
   if (targetDate < today) return res.status(400).json({ error: 'Cannot book in the past' });
 
   try {
+    const dayOfWeek = targetDate.getDay();
+    const scheduleResult = await db.query('SELECT * FROM schedule WHERE day_of_week = $1', [dayOfWeek]);
+
+    if (scheduleResult.rowCount === 0 || !scheduleResult.rows[0].is_open) {
+      return res.json({ date, service_id, duration_mins: 0, available_slots: [], closed: true });
+    }
+
+    const schedule = scheduleResult.rows[0];
+    const [openHour, openMin]   = schedule.open_time.split(':').map(Number);
+    const [closeHour, closeMin] = schedule.close_time.split(':').map(Number);
+
     const serviceResult = await db.query('SELECT duration_mins FROM services WHERE id = $1 AND active = TRUE', [service_id]);
     if (serviceResult.rowCount === 0) return res.status(404).json({ error: 'Service not found' });
     const duration = serviceResult.rows[0].duration_mins;
 
-    const dayStart = new Date(date); dayStart.setHours(0, 0, 0, 0);
-    const dayEnd   = new Date(date); dayEnd.setHours(23, 59, 59, 999);
-
+    const dayStart = new Date(date); dayStart.setHours(0,0,0,0);
+    const dayEnd   = new Date(date); dayEnd.setHours(23,59,59,999);
     const bookingsResult = await db.query(
-      `SELECT b.booked_at, s.duration_mins FROM bookings b JOIN services s ON s.id = b.service_id WHERE b.booked_at BETWEEN $1 AND $2 AND b.status != 'cancelled'`,
+      `SELECT b.booked_at, s.duration_mins FROM bookings b JOIN services s ON s.id=b.service_id WHERE b.booked_at BETWEEN $1 AND $2 AND b.status != 'cancelled'`,
       [dayStart.toISOString(), dayEnd.toISOString()]
     );
 
-    // Current time + 180 minute buffer so clients can't book something starting very soon
     const now = new Date();
     const minimumStart = new Date(now.getTime() + 3 * 60 * 60 * 1000);
 
-    const allSlots = generateSlots(targetDate);
+    const allSlots = generateSlots(targetDate, openHour, openMin, closeHour, closeMin);
     const freeSlots = allSlots.filter((slot) => {
       const slotStart = slot.getTime();
-      const slotEnd   = slot.getTime() + duration * 60 * 1000;
-
-      // Block slots that have already passed or start within 30 minutes
+      const slotEnd   = slotStart + duration * 60 * 1000;
       if (slotStart < minimumStart.getTime()) return false;
-
-      // Block slots that run past closing time
-      const closing = new Date(slot); closing.setHours(WORK_END, 0, 0, 0);
+      const closing = new Date(slot); closing.setHours(closeHour, closeMin, 0, 0);
       if (slotEnd > closing.getTime()) return false;
-
-      // Block slots that overlap existing bookings
       for (const b of bookingsResult.rows) {
         const bStart = new Date(b.booked_at).getTime();
         const bEnd   = bStart + b.duration_mins * 60 * 1000;
         if (slotStart < bEnd && slotEnd > bStart) return false;
       }
-
       return true;
     });
 
