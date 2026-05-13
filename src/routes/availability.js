@@ -41,17 +41,29 @@ router.get('/', async (req, res) => {
       [dayStart.toISOString(), dayEnd.toISOString()]
     );
 
+    // Current time + 180 minute buffer so clients can't book something starting very soon
+    const now = new Date();
+    const minimumStart = new Date(now.getTime() + 3 * 60 * 60 * 1000);
+
     const allSlots = generateSlots(targetDate);
     const freeSlots = allSlots.filter((slot) => {
       const slotStart = slot.getTime();
-      const slotEnd   = slotStart + duration * 60 * 1000;
-      const closing   = new Date(slot); closing.setHours(WORK_END, 0, 0, 0);
+      const slotEnd   = slot.getTime() + duration * 60 * 1000;
+
+      // Block slots that have already passed or start within 30 minutes
+      if (slotStart < minimumStart.getTime()) return false;
+
+      // Block slots that run past closing time
+      const closing = new Date(slot); closing.setHours(WORK_END, 0, 0, 0);
       if (slotEnd > closing.getTime()) return false;
+
+      // Block slots that overlap existing bookings
       for (const b of bookingsResult.rows) {
         const bStart = new Date(b.booked_at).getTime();
         const bEnd   = bStart + b.duration_mins * 60 * 1000;
         if (slotStart < bEnd && slotEnd > bStart) return false;
       }
+
       return true;
     });
 
