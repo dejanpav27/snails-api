@@ -3,9 +3,9 @@ const bcrypt = require('bcryptjs');
 const db = require('./index');
 
 // Edit these before running!
-const ADMIN_NAME  = 'Snails Admin';
-const ADMIN_EMAIL = 'admin@snails.com';
-const ADMIN_PASS  = 'change-this-password';
+const ADMIN_NAME  = 'Sara';
+const ADMIN_EMAIL = 'sara@snails.com';
+const ADMIN_PASS  = 'qwer1234';
 
 async function createAdmin() {
   try {
