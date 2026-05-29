@@ -9,6 +9,7 @@ const availabilityRoutes = require('./routes/availability');
 const bookingsRoutes     = require('./routes/bookings');
 const clientsRoutes      = require('./routes/clients');
 const scheduleRoutes     = require('./routes/schedule');
+const notificationsRoutes = require('./routes/notifications');
 const { runReminders }   = require('./utils/scheduler');
 
 const app = express();
@@ -34,10 +35,11 @@ app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'Snails API'
 app.use('/auth',         authRoutes);
 app.use('/services',     servicesRoutes);
 app.use('/availability', availabilityRoutes);
-app.post('/bookings',    bookingLimiter); // rate limit public POST only
+app.post('/bookings',    bookingLimiter);
 app.use('/bookings',     bookingsRoutes);
 app.use('/clients',      clientsRoutes);
 app.use('/schedule',     scheduleRoutes);
+app.use('/notifications', notificationsRoutes);
 
 app.use((_req, res) => res.status(404).json({ error: 'Route not found' }));
 app.use((err, _req, res, _next) => { console.error('Unhandled error:', err); res.status(500).json({ error: 'Internal server error' }); });

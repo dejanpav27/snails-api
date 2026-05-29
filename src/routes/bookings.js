@@ -3,6 +3,19 @@ const db = require('../db');
 const { requireAuth } = require('../middleware/auth');
 const { sendBookingConfirmation, sendCancellationEmail } = require('../utils/email');
 
+// Helper — create a notification for an event
+async function createNotification({ type, bookingId, clientName, serviceLabel, bookedAt }) {
+  try {
+    await db.query(
+      `INSERT INTO notifications (type, booking_id, client_name, service_label, booked_at)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [type, bookingId, clientName, serviceLabel, bookedAt]
+    );
+  } catch (err) {
+    console.error('Failed to create notification:', err.message);
+  }
+}
+
 // Helper — get all services for a booking
 async function getBookingServices(bookingId, client) {
   const result = await (client || db).query(
@@ -107,7 +120,7 @@ router.post('/', async (req, res) => {
 
     await dbClient.query('COMMIT');
 
-    // Send confirmation email
+    // Send request received email
     const clientRow = await db.query('SELECT * FROM clients WHERE id = $1', [clientId]);
     sendBookingConfirmation({
       client: clientRow.rows[0],
@@ -116,6 +129,16 @@ router.post('/', async (req, res) => {
       totalPrice,
       booking,
     }).catch(err => console.error('Email error:', err));
+
+    // Create notification for admin
+    const serviceLabel = services.map(s => s.name).join(' + ');
+    await createNotification({
+      type: 'new_booking',
+      bookingId: booking.id,
+      clientName: client.name,
+      serviceLabel,
+      bookedAt: booked_at,
+    });
 
     res.status(201).json({
       message: 'Booking created',
@@ -218,11 +241,29 @@ router.patch('/:id/status', requireAuth, async (req, res) => {
     if (result.rowCount === 0) return res.status(404).json({ error: 'Booking not found' });
     const booking = result.rows[0];
 
-    if (status === 'cancelled') {
-      // FIX: fetch all services from booking_services for cancellation email
-      const clientResult = await db.query('SELECT * FROM clients WHERE id = $1', [booking.client_id]);
-      const services = await getBookingServices(booking.id);
+    // Fetch client and services for emails + notifications
+    const clientResult = await db.query('SELECT * FROM clients WHERE id = $1', [booking.client_id]);
+    const services = await getBookingServices(booking.id);
+    const serviceLabel = services.map(s => s.name).join(' + ') || 'appointment';
+    const clientName = clientResult.rows[0]?.name || 'Client';
 
+    if (status === 'confirmed') {
+      // Send confirmation email to client
+      if (clientResult.rowCount > 0) {
+        const totalDuration = booking.total_duration_mins || services.reduce((s, x) => s + x.duration_mins, 0);
+        const totalPrice    = booking.total_price    || services.reduce((s, x) => s + Number(x.price), 0);
+        sendBookingConfirmation({
+          client: clientResult.rows[0],
+          services,
+          totalDuration,
+          totalPrice,
+          booking,
+        }).catch(err => console.error('Confirmation email error:', err));
+      }
+      await createNotification({ type: 'confirmed', bookingId: booking.id, clientName, serviceLabel, bookedAt: booking.booked_at });
+    }
+
+    if (status === 'cancelled') {
       if (clientResult.rowCount > 0) {
         sendCancellationEmail({
           client: clientResult.rows[0],
@@ -230,6 +271,7 @@ router.patch('/:id/status', requireAuth, async (req, res) => {
           booking,
         }).catch(err => console.error('Cancellation email error:', err));
       }
+      await createNotification({ type: 'cancelled', bookingId: booking.id, clientName, serviceLabel, bookedAt: booking.booked_at });
     }
 
     res.json({ message: `Booking ${status}`, booking });
