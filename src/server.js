@@ -1,6 +1,7 @@
 require('dotenv').config();
-const express = require('express');
-const cors    = require('cors');
+const express   = require('express');
+const cors      = require('cors');
+const rateLimit = require('express-rate-limit');
 
 const authRoutes         = require('./routes/auth');
 const servicesRoutes     = require('./routes/services');
@@ -19,11 +20,21 @@ app.use((req, _res, next) => {
   next();
 });
 
+// Rate limit public booking endpoint — 5 requests per IP per hour
+const bookingLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  message: { error: 'Too many booking requests, please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'Snails API', time: new Date().toISOString() }));
 
 app.use('/auth',         authRoutes);
 app.use('/services',     servicesRoutes);
 app.use('/availability', availabilityRoutes);
+app.post('/bookings',    bookingLimiter); // rate limit public POST only
 app.use('/bookings',     bookingsRoutes);
 app.use('/clients',      clientsRoutes);
 app.use('/schedule',     scheduleRoutes);

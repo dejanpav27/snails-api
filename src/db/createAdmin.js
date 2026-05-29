@@ -2,10 +2,16 @@ require('dotenv').config();
 const bcrypt = require('bcryptjs');
 const db = require('./index');
 
-// Edit these before running!
-const ADMIN_NAME  = 'Snails Admin';
-const ADMIN_EMAIL = 'admin@snails.com';
-const ADMIN_PASS  = 'change-this-password';
+// FIX: read password from command-line arg or env var, never hardcoded
+const ADMIN_NAME  = process.env.ADMIN_NAME  || 'Snails Admin';
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@snails.com';
+const ADMIN_PASS  = process.argv[2] || process.env.ADMIN_PASS;
+
+if (!ADMIN_PASS) {
+  console.error('Usage: node createAdmin.js <password>');
+  console.error('   or: set ADMIN_PASS in your .env file');
+  process.exit(1);
+}
 
 async function createAdmin() {
   try {

@@ -11,6 +11,7 @@ function formatDate(isoString) {
   });
 }
 
+// FIX: consistent RSD formatting everywhere
 function formatPrice(val) {
   return `${Number(val).toFixed(0)} RSD`;
 }
@@ -94,9 +95,15 @@ async function sendBookingConfirmation({ client, services, service, totalDuratio
   }
 }
 
-async function sendCancellationEmail({ client, service, booking }) {
+// FIX: sendCancellationEmail now accepts services[] array for multi-service bookings
+async function sendCancellationEmail({ client, services, service, booking }) {
   if (!client.email) return;
-  const dateStr = formatDate(booking.booked_at);
+  const dateStr    = formatDate(booking.booked_at);
+  const allServices = normalizeServices(services, service);
+  const serviceLabel = allServices.length > 0
+    ? allServices.map(s => s.name).join(' + ')
+    : 'your appointment';
+
   await resend.emails.send({
     from: FROM,
     to: client.email,
@@ -107,7 +114,7 @@ async function sendCancellationEmail({ client, service, booking }) {
           <h1 style="color:#72243E;font-size:22px;margin:0">Snails ✦</h1>
         </div>
         <h2 style="color:#72243E">Booking cancelled</h2>
-        <p style="color:#993556">Your appointment for <strong>${service.name}</strong> on ${dateStr} has been cancelled.</p>
+        <p style="color:#993556">Your appointment for <strong>${serviceLabel}</strong> on ${dateStr} has been cancelled.</p>
         <p style="color:#993556;font-size:13px;margin-top:12px">Want to rebook? Visit our booking page.</p>
         <p style="color:#d4537e;font-size:12px;margin-top:24px">Snails nail studio ✦</p>
       </div>

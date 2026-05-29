@@ -148,7 +148,7 @@ router.get('/', requireAuth, async (req, res) => {
            s.id AS service_id, s.name AS service_name, s.duration_mins, s.price
     FROM bookings b
     JOIN clients c ON c.id = b.client_id
-    JOIN services s ON s.id = b.service_id
+    LEFT JOIN services s ON s.id = b.service_id
     WHERE 1=1
   `;
   const params = [];
@@ -191,7 +191,7 @@ router.get('/:id', requireAuth, async (req, res) => {
               c.id AS client_id, s.name AS service_name, s.duration_mins, s.price
        FROM bookings b
        JOIN clients c ON c.id = b.client_id
-       JOIN services s ON s.id = b.service_id
+       LEFT JOIN services s ON s.id = b.service_id
        WHERE b.id = $1`,
       [req.params.id]
     );
@@ -217,19 +217,21 @@ router.patch('/:id/status', requireAuth, async (req, res) => {
     const result = await db.query(`UPDATE bookings SET status=$1 WHERE id=$2 RETURNING *`, [status, req.params.id]);
     if (result.rowCount === 0) return res.status(404).json({ error: 'Booking not found' });
     const booking = result.rows[0];
+
     if (status === 'cancelled') {
-      const details = await db.query(
-        `SELECT c.*, s.name AS service_name, s.duration_mins FROM bookings b
-         JOIN clients c ON c.id = b.client_id
-         JOIN services s ON s.id = b.service_id
-         WHERE b.id = $1`, [booking.id]
-      );
-      if (details.rowCount > 0) {
-        const row = details.rows[0];
-        sendCancellationEmail({ client: row, service: { name: row.service_name, duration_mins: row.duration_mins }, booking })
-          .catch(err => console.error('Cancellation email error:', err));
+      // FIX: fetch all services from booking_services for cancellation email
+      const clientResult = await db.query('SELECT * FROM clients WHERE id = $1', [booking.client_id]);
+      const services = await getBookingServices(booking.id);
+
+      if (clientResult.rowCount > 0) {
+        sendCancellationEmail({
+          client: clientResult.rows[0],
+          services: services.length > 0 ? services : null,
+          booking,
+        }).catch(err => console.error('Cancellation email error:', err));
       }
     }
+
     res.json({ message: `Booking ${status}`, booking });
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
