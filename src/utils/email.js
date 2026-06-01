@@ -23,7 +23,7 @@ function normalizeServices(services, service) {
   return [];
 }
 
-async function sendBookingConfirmation({ client, services, service, totalDuration, totalPrice, booking }) {
+async function sendBookingConfirmation({ client, services, service, totalDuration, totalPrice, booking, cancelToken }) {
   const allServices   = normalizeServices(services, service);
   const totalDur      = totalDuration || allServices.reduce((s, x) => s + x.duration_mins, 0);
   const totalPriceVal = totalPrice    || allServices.reduce((s, x) => s + Number(x.price), 0);
@@ -62,6 +62,7 @@ async function sendBookingConfirmation({ client, services, service, totalDuratio
             </table>
           </div>
           <p style="color:#993556;font-size:13px">Need to cancel or reschedule? Please give at least 24 hours notice.</p>
+        ${cancelToken ? `<p style="margin-top:10px;font-size:12px"><a href="${process.env.API_URL || 'https://snails-api-production.up.railway.app'}/bookings/${cancelToken}/cancel" style="color:#d4537e">Cancel this booking</a></p>` : ''}
           <p style="color:#d4537e;font-size:12px;margin-top:24px">Snails nail studio — see you soon ✦</p>
         </div>
       `,

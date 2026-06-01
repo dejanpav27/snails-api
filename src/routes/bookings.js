@@ -248,6 +248,7 @@ router.patch('/:id/status', requireAuth, async (req, res) => {
           totalDuration,
           totalPrice,
           booking,
+          cancelToken: booking.cancel_token,
         }).catch(err => console.error('Confirmation email error:', err));
       }
       await createNotification({ type: 'confirmed', bookingId: booking.id, clientName, serviceLabel, bookedAt: booking.booked_at });
@@ -312,5 +313,90 @@ router.post('/admin', requireAuth, async (req, res) => {
     dbClient.release();
   }
 });
+
+// GET /bookings/:token/cancel — client self-cancel via token
+router.get('/:token/cancel', async (req, res) => {
+  const { token } = req.params;
+  const BOOKING_URL = process.env.BOOKING_URL || process.env.FRONTEND_URL || 'https://snails-booking.vercel.app';
+
+  try {
+    const result = await db.query(
+      `SELECT b.*, c.name AS client_name, c.email AS client_email
+       FROM bookings b
+       JOIN clients c ON c.id = b.client_id
+       WHERE b.cancel_token = $1`,
+      [token]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).send(cancelPage('Invalid link', 'This cancel link is not valid.', BOOKING_URL));
+    }
+
+    const booking = result.rows[0];
+
+    if (booking.status === 'cancelled') {
+      return res.send(cancelPage('Already cancelled', 'This booking has already been cancelled.', BOOKING_URL));
+    }
+
+    // Check 3-hour window
+    const now = new Date();
+    const appt = new Date(booking.booked_at);
+    const hoursUntil = (appt - now) / (1000 * 60 * 60);
+
+    if (hoursUntil < 3) {
+      return res.send(cancelPage('Too late to cancel', 'Bookings can only be cancelled up to 3 hours before the appointment. Please contact Sara directly.', BOOKING_URL));
+    }
+
+    // Cancel it
+    await db.query(`UPDATE bookings SET status = 'cancelled' WHERE id = $1`, [booking.id]);
+
+    // Send cancellation email
+    const { sendCancellationEmail } = require('../utils/email');
+    const services = await db.query(
+      `SELECT s.name, s.duration_mins, s.price FROM booking_services bs
+       JOIN services s ON s.id = bs.service_id WHERE bs.booking_id = $1 ORDER BY bs.sort_order`,
+      [booking.id]
+    );
+    sendCancellationEmail({
+      client: { name: booking.client_name, email: booking.client_email },
+      services: services.rows.length > 0 ? services.rows : null,
+      booking,
+    }).catch(err => console.error('Cancel email error:', err));
+
+    return res.send(cancelPage('Booking cancelled', 'Your booking has been cancelled. We hope to see you again soon!', BOOKING_URL));
+
+  } catch (err) {
+    console.error('Cancel token error:', err);
+    res.status(500).send(cancelPage('Error', 'Something went wrong. Please try again or contact Sara directly.', BOOKING_URL));
+  }
+});
+
+function cancelPage(title, message, bookingUrl) {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${title} — Snails</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #fff8fb; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+    .card { background: #fff; border: 1px solid #ffd6e7; border-radius: 16px; padding: 40px 32px; max-width: 420px; width: 100%; text-align: center; }
+    .logo { font-size: 22px; color: #72243E; margin-bottom: 24px; }
+    h1 { font-size: 20px; font-weight: 500; color: #72243E; margin-bottom: 12px; }
+    p { font-size: 14px; color: #993556; line-height: 1.6; margin-bottom: 28px; }
+    a { display: inline-block; padding: 10px 24px; background: #d4537e; color: #fff; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 500; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">Snails ✦</div>
+    <h1>${title}</h1>
+    <p>${message}</p>
+    <a href="${bookingUrl}">Book again</a>
+  </div>
+</body>
+</html>`;
+}
 
 module.exports = router;
