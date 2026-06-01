@@ -225,7 +225,7 @@ router.get('/:id', requireAuth, async (req, res) => {
 // PATCH /bookings/:id/status
 router.patch('/:id/status', requireAuth, async (req, res) => {
   const { status } = req.body;
-  if (!['pending','confirmed','cancelled'].includes(status)) return res.status(400).json({ error: 'Invalid status' });
+  if (!['pending','confirmed','cancelled','no_show'].includes(status)) return res.status(400).json({ error: 'Invalid status' });
   try {
     const result = await db.query(`UPDATE bookings SET status=$1 WHERE id=$2 RETURNING *`, [status, req.params.id]);
     if (result.rowCount === 0) return res.status(404).json({ error: 'Booking not found' });
