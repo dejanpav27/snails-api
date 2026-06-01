@@ -44,8 +44,7 @@ async function sendBookingConfirmation({ client, services, service, totalDuratio
       html: `
         <div style="font-family:sans-serif;max-width:520px;margin:0 auto;color:#3d3d3a">
           <div style="background:#fff0f5;padding:24px;border-radius:12px;margin-bottom:20px;text-align:center">
-            <h1 style="color:#72243E;font-size:22px;margin:0">Snails ✦</h1>
-            <p style="color:#d4537e;margin:4px 0 0;font-size:13px">nails by Sara Pudar</p>
+            <img src="https://snails-booking.vercel.app/logo.png" alt="Snails" style="width:180px;height:auto;display:block;margin:0 auto" />
           </div>
           <h2 style="color:#72243E;font-size:18px">You're all booked, ${client.name}!</h2>
           <div style="background:#fff0f5;border:1px solid #ffd6e7;border-radius:10px;padding:16px;margin:16px 0">
@@ -111,7 +110,7 @@ async function sendCancellationEmail({ client, services, service, booking }) {
     html: `
       <div style="font-family:sans-serif;max-width:520px;margin:0 auto;color:#3d3d3a">
         <div style="background:#fff0f5;padding:24px;border-radius:12px;margin-bottom:20px;text-align:center">
-          <h1 style="color:#72243E;font-size:22px;margin:0">Snails ✦</h1>
+          <img src="https://snails-booking.vercel.app/logo.png" alt="Snails" style="width:180px;height:auto;display:block;margin:0 auto" />
         </div>
         <h2 style="color:#72243E">Booking cancelled</h2>
         <p style="color:#993556">Your appointment for <strong>${serviceLabel}</strong> on ${dateStr} has been cancelled.</p>
