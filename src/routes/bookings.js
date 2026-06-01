@@ -120,16 +120,6 @@ router.post('/', async (req, res) => {
 
     await dbClient.query('COMMIT');
 
-    // Send request received email
-    const clientRow = await db.query('SELECT * FROM clients WHERE id = $1', [clientId]);
-    sendBookingConfirmation({
-      client: clientRow.rows[0],
-      services,
-      totalDuration,
-      totalPrice,
-      booking,
-    }).catch(err => console.error('Email error:', err));
-
     // Create notification for admin
     const serviceLabel = services.map(s => s.name).join(' + ');
     await createNotification({
