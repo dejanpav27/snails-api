@@ -1,6 +1,5 @@
 require('dotenv').config();
 const { Resend } = require('resend');
-// FIX: use shared db pool instead of creating a second one
 const db = require('../db');
 
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -8,49 +7,81 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 const FROM        = process.env.EMAIL_FROM  || 'onboarding@resend.dev';
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
 
-function fmt(iso, style) {
-  return new Date(iso).toLocaleString('en-GB', style);
+function formatDate(iso) {
+  return new Date(iso).toLocaleString('en-GB', {
+    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+  });
 }
-const fmtDate = iso => fmt(iso, { weekday:'long', day:'numeric', month:'long', year:'numeric' });
-const fmtTime = iso => fmt(iso, { hour:'2-digit', minute:'2-digit' });
-
-// FIX: consistent RSD formatting
+function formatTime(iso) {
+  return new Date(iso).toLocaleString('en-GB', { hour: '2-digit', minute: '2-digit' });
+}
 function formatPrice(val) {
-  return `${Number(val).toFixed(0)} RSD`;
+  return `${Number(val).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',')} RSD`;
+}
+
+function baseWrapper(content) {
+  return `
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:520px;margin:0 auto;color:#3d3d3a;background:#fff;padding:0">
+      <div style="background:#fff0f5;padding:28px;text-align:center;border-radius:12px 12px 0 0">
+        <img src="https://snails-booking.vercel.app/logo.png" alt="Snails Nail Studio" style="width:160px;height:auto;display:block;margin:0 auto" />
+      </div>
+      <div style="padding:32px 36px">
+        ${content}
+      </div>
+      <div style="padding:20px 36px;border-top:1px solid #ffd6e7;text-align:center">
+        <p style="font-size:12px;color:#d4537e;margin:0">Snails Nail Studio ✦</p>
+      </div>
+    </div>
+  `;
+}
+
+function appointmentBox(rows) {
+  return `
+    <div style="background:#fff0f5;border:1px solid #ffd6e7;border-radius:10px;padding:18px 20px;margin:20px 0">
+      <table style="width:100%;border-collapse:collapse;font-size:14px">
+        ${rows}
+      </table>
+    </div>
+  `;
+}
+
+function row(label, value) {
+  return `
+    <tr>
+      <td style="color:#993556;padding:5px 0;vertical-align:top">${label}</td>
+      <td style="color:#72243E;font-weight:500;text-align:right;padding:5px 0">${value}</td>
+    </tr>
+  `;
+}
+function divider() {
+  return `<tr><td colspan="2" style="border-top:1px solid #ffd6e7;padding:4px 0"></td></tr>`;
 }
 
 async function sendReminder({ client, services, totalDuration, booking }) {
   if (!client.email) return;
 
-  // FIX: show all services in reminder email
   const serviceLabel = services.map(s => s.name).join(' + ');
-  const serviceRows  = services.map(s =>
-    `<tr><td style="color:#993556;padding:6px 0">${s.name}</td><td style="color:#72243E;font-weight:500;text-align:right">${s.duration_mins} min</td></tr>`
-  ).join('');
+  const dateStr      = formatDate(booking.booked_at);
+  const timeStr      = formatTime(booking.booked_at);
+
+  const detailRows = row('Service', serviceLabel)
+    + row('Date', dateStr)
+    + row('Time', timeStr)
+    + row('Duration', `${totalDuration} min`);
 
   await resend.emails.send({
     from: FROM,
     to: client.email,
-    subject: `Reminder — your Snails appointment tomorrow at ${fmtTime(booking.booked_at)}`,
-    html: `
-      <div style="font-family:sans-serif;max-width:520px;margin:0 auto;color:#3d3d3a">
-        <div style="background:#fff0f5;padding:24px;border-radius:12px;text-align:center;margin-bottom:24px">
-          <h1 style="font-size:24px;font-weight:400;color:#72243E;margin:0">Snails ✦</h1>
-        </div>
-        <h2 style="font-size:18px;font-weight:500;color:#72243E;margin-bottom:6px">See you tomorrow, ${client.name.split(' ')[0]}!</h2>
-        <div style="background:#fff0f5;border:1px solid #ffd6e7;border-radius:10px;padding:18px;margin-bottom:20px">
-          <table style="width:100%;border-collapse:collapse;font-size:14px">
-            ${serviceRows}
-            <tr><td colspan="2" style="border-top:1px solid #ffd6e7;padding-top:8px"></td></tr>
-            <tr><td style="color:#993556;padding:6px 0">Total duration</td><td style="color:#72243E;font-weight:500;text-align:right">${totalDuration} min</td></tr>
-            <tr><td style="color:#993556;padding:6px 0">Date</td><td style="color:#72243E;font-weight:500;text-align:right">${fmtDate(booking.booked_at)}</td></tr>
-            <tr><td style="color:#993556;padding:6px 0">Time</td><td style="color:#72243E;font-weight:500;text-align:right">${fmtTime(booking.booked_at)}</td></tr>
-          </table>
-        </div>
-        <p style="font-size:13px;color:#993556">Need to cancel? Please let us know at least 24 hours in advance.</p>
-        <p style="color:#d4537e;font-size:12px;margin-top:28px">Snails nail studio ✦</p>
-      </div>
-    `,
+    subject: 'See you tomorrow ✦',
+    html: baseWrapper(`
+      <p style="font-size:16px;color:#3d3d3a;margin:0 0 8px">Hi ${client.name.split(' ')[0]},</p>
+      <p style="font-size:14px;color:#993556;margin:0 0 20px">Just a friendly reminder that your appointment is tomorrow.</p>
+      ${appointmentBox(detailRows)}
+      <p style="font-size:14px;color:#993556;margin:0 0 8px">We're looking forward to seeing you and helping you enjoy a little well-deserved self-care.</p>
+      <p style="font-size:13px;color:#993556;margin:0 0 20px">If your plans have changed, please contact us at least 24 hours before your appointment.</p>
+      <p style="font-size:14px;color:#72243E;margin:0 0 4px">See you soon ✦</p>
+      <p style="font-size:13px;color:#993556;margin:0">Warmly,<br>Snails Nail Studio</p>
+    `),
   });
   console.log(`  ✓ Reminder sent → ${client.email}`);
 }
@@ -62,41 +93,45 @@ async function markReminded(bookingId) {
 async function sendAdminDailySummary(bookings) {
   if (!ADMIN_EMAIL || bookings.length === 0) return;
 
-  // FIX: use total_price and service labels (already resolved in runReminders)
-  const rows = bookings.map(b => `
+  const total      = bookings.reduce((s, b) => s + Number(b.total_price), 0);
+  const newClients = bookings.filter(b => b.is_new_client).length;
+
+  const tableRows = bookings.map(b => `
     <tr>
-      <td style="padding:8px 10px;border-bottom:1px solid #fff0f5;color:#72243E">${fmtTime(b.booked_at)}</td>
-      <td style="padding:8px 10px;border-bottom:1px solid #fff0f5;color:#72243E;font-weight:500">${b.client_name}</td>
-      <td style="padding:8px 10px;border-bottom:1px solid #fff0f5;color:#993556">${b.service_label}</td>
-      <td style="padding:8px 10px;border-bottom:1px solid #fff0f5;color:#d4537e">${formatPrice(b.total_price)}</td>
+      <td style="padding:9px 12px;border-bottom:1px solid #fff0f5;color:#72243E">${formatTime(b.booked_at)}</td>
+      <td style="padding:9px 12px;border-bottom:1px solid #fff0f5;color:#72243E;font-weight:500">${b.client_name}</td>
+      <td style="padding:9px 12px;border-bottom:1px solid #fff0f5;color:#993556">${b.service_label}</td>
+      <td style="padding:9px 12px;border-bottom:1px solid #fff0f5;color:#d4537e;text-align:right">${formatPrice(b.total_price)}</td>
     </tr>
   `).join('');
-
-  // FIX: use total_price for sum, RSD not £
-  const total = bookings.reduce((s, b) => s + Number(b.total_price), 0);
 
   await resend.emails.send({
     from: FROM,
     to: ADMIN_EMAIL,
-    subject: `Snails — ${bookings.length} appointment${bookings.length !== 1 ? 's' : ''} tomorrow`,
-    html: `
-      <div style="font-family:sans-serif;max-width:560px;margin:0 auto;color:#3d3d3a">
-        <div style="background:#fff0f5;padding:20px;border-radius:12px;margin-bottom:20px">
-          <h1 style="font-size:20px;font-weight:400;color:#72243E;margin:0">Snails ✦</h1>
-        </div>
-        <h2 style="font-size:17px;font-weight:500;color:#72243E;margin-bottom:4px">Tomorrow's schedule</h2>
-        <p style="color:#993556;font-size:14px;margin-bottom:16px">${bookings.length} appointment${bookings.length !== 1 ? 's' : ''} · ${formatPrice(total)} total</p>
-        <table style="width:100%;border-collapse:collapse;font-size:14px;border:1px solid #ffd6e7;border-radius:10px;overflow:hidden">
-          <thead><tr style="background:#ffd6e7">
-            <th style="padding:8px 10px;text-align:left;color:#72243E">Time</th>
-            <th style="padding:8px 10px;text-align:left;color:#72243E">Client</th>
-            <th style="padding:8px 10px;text-align:left;color:#72243E">Service</th>
-            <th style="padding:8px 10px;text-align:left;color:#72243E">Price</th>
-          </tr></thead>
-          <tbody>${rows}</tbody>
+    subject: `Tomorrow's Schedule`,
+    html: baseWrapper(`
+      <p style="font-size:16px;color:#3d3d3a;margin:0 0 20px">Good morning,</p>
+      <p style="font-size:14px;color:#993556;margin:0 0 20px">Here's an overview of tomorrow's bookings.</p>
+      <div style="background:#fff0f5;border:1px solid #ffd6e7;border-radius:10px;padding:16px 20px;margin:0 0 20px">
+        <table style="width:100%;border-collapse:collapse;font-size:14px">
+          ${row('Appointments', bookings.length)}
+          ${row('Expected revenue', formatPrice(total))}
+          ${newClients > 0 ? row('New clients', newClients) : ''}
         </table>
       </div>
-    `,
+      <table style="width:100%;border-collapse:collapse;font-size:14px;border:1px solid #ffd6e7;border-radius:10px;overflow:hidden">
+        <thead>
+          <tr style="background:#ffd6e7">
+            <th style="padding:9px 12px;text-align:left;color:#72243E;font-weight:500">Time</th>
+            <th style="padding:9px 12px;text-align:left;color:#72243E;font-weight:500">Client</th>
+            <th style="padding:9px 12px;text-align:left;color:#72243E;font-weight:500">Service</th>
+            <th style="padding:9px 12px;text-align:right;color:#72243E;font-weight:500">Price</th>
+          </tr>
+        </thead>
+        <tbody>${tableRows}</tbody>
+      </table>
+      <p style="font-size:14px;color:#72243E;margin:24px 0 0">Have a wonderful and successful day ✦</p>
+    `),
   });
   console.log(`  ✓ Daily summary sent → ${ADMIN_EMAIL}`);
 }
@@ -108,7 +143,6 @@ async function runReminders() {
   const windowEnd   = new Date(now.getTime() + 28 * 3600 * 1000);
 
   try {
-    // FIX: use LEFT JOIN, fetch total_price and total_duration_mins
     const result = await db.query(
       `SELECT b.id, b.booked_at, b.total_duration_mins, b.total_price,
          c.name AS client_name, c.email AS client_email, c.phone AS client_phone,
@@ -124,7 +158,6 @@ async function runReminders() {
       [windowStart.toISOString(), windowEnd.toISOString()]
     );
 
-    // For each booking, resolve all services from booking_services
     const bookings = await Promise.all(result.rows.map(async (b) => {
       const svcResult = await db.query(
         `SELECT s.name, s.duration_mins, s.price
@@ -138,12 +171,19 @@ async function runReminders() {
         ? svcResult.rows
         : [{ name: b.service_name, duration_mins: b.duration_mins, price: b.price }];
 
+      const countResult = await db.query(
+        `SELECT COUNT(*) FROM bookings WHERE client_id = (SELECT client_id FROM bookings WHERE id = $1)`,
+        [b.id]
+      );
+      const is_new_client = parseInt(countResult.rows[0].count) === 1;
+
       return {
         ...b,
         services,
         service_label: services.map(s => s.name).join(' + '),
         total_duration_mins: b.total_duration_mins ?? services.reduce((s, x) => s + x.duration_mins, 0),
         total_price: b.total_price ?? services.reduce((s, x) => s + Number(x.price), 0),
+        is_new_client,
       };
     }));
 

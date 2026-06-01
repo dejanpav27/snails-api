@@ -4,121 +4,149 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 const FROM        = process.env.EMAIL_FROM  || 'onboarding@resend.dev';
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
 
-function formatDate(isoString) {
-  return new Date(isoString).toLocaleString('en-GB', {
-    weekday: 'long', day: 'numeric', month: 'long',
-    year: 'numeric', hour: '2-digit', minute: '2-digit',
+function formatDate(iso) {
+  return new Date(iso).toLocaleString('en-GB', {
+    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
   });
 }
-
-// FIX: consistent RSD formatting everywhere
+function formatTime(iso) {
+  return new Date(iso).toLocaleString('en-GB', { hour: '2-digit', minute: '2-digit' });
+}
 function formatPrice(val) {
-  return `${Number(val).toFixed(0)} RSD`;
+  return `${Number(val).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',')} RSD`;
 }
 
-// Accepts either single service or array of services
 function normalizeServices(services, service) {
   if (services && Array.isArray(services)) return services;
   if (service) return [service];
   return [];
 }
 
+function baseWrapper(content) {
+  return `
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:520px;margin:0 auto;color:#3d3d3a;background:#fff;padding:0">
+      <div style="background:#fff0f5;padding:28px;text-align:center;border-radius:12px 12px 0 0">
+        <img src="https://snails-booking.vercel.app/logo.png" alt="Snails Nail Studio" style="width:160px;height:auto;display:block;margin:0 auto" />
+      </div>
+      <div style="padding:32px 36px">
+        ${content}
+      </div>
+      <div style="padding:20px 36px;border-top:1px solid #ffd6e7;text-align:center">
+        <p style="font-size:12px;color:#d4537e;margin:0">Snails Nail Studio ✦</p>
+      </div>
+    </div>
+  `;
+}
+
+function appointmentBox(rows) {
+  return `
+    <div style="background:#fff0f5;border:1px solid #ffd6e7;border-radius:10px;padding:18px 20px;margin:20px 0">
+      <table style="width:100%;border-collapse:collapse;font-size:14px">
+        ${rows}
+      </table>
+    </div>
+  `;
+}
+
+function row(label, value) {
+  return `
+    <tr>
+      <td style="color:#993556;padding:5px 0;vertical-align:top">${label}</td>
+      <td style="color:#72243E;font-weight:500;text-align:right;padding:5px 0">${value}</td>
+    </tr>
+  `;
+}
+
+function divider() {
+  return `<tr><td colspan="2" style="border-top:1px solid #ffd6e7;padding:4px 0"></td></tr>`;
+}
+
 async function sendBookingConfirmation({ client, services, service, totalDuration, totalPrice, booking, cancelToken }) {
   const allServices   = normalizeServices(services, service);
   const totalDur      = totalDuration || allServices.reduce((s, x) => s + x.duration_mins, 0);
   const totalPriceVal = totalPrice    || allServices.reduce((s, x) => s + Number(x.price), 0);
+  const serviceLabel  = allServices.map(s => s.name).join(' + ');
   const dateStr       = formatDate(booking.booked_at);
+  const timeStr       = formatTime(booking.booked_at);
 
-  const serviceRows = allServices.map(s => `
-    <tr>
-      <td style="color:#993556;padding:6px 0">${s.name}</td>
-      <td style="color:#72243E;font-weight:500;text-align:right">${s.duration_mins} min · ${formatPrice(s.price)}</td>
-    </tr>
-  `).join('');
+  const serviceRows = allServices.length > 1
+    ? allServices.map(s => row(s.name, `${s.duration_mins} min · ${formatPrice(s.price)}`)).join('') + divider()
+    : '';
+
+  const detailRows = serviceRows
+    + row('Service', serviceLabel)
+    + row('Date', dateStr)
+    + row('Time', timeStr)
+    + row('Duration', `${totalDur} min`)
+    + divider()
+    + row('Price', formatPrice(totalPriceVal));
 
   if (client.email) {
     await resend.emails.send({
       from: FROM,
       to: client.email,
-      subject: `Your Snails booking is confirmed`,
-      html: `
-        <div style="font-family:sans-serif;max-width:520px;margin:0 auto;color:#3d3d3a">
-          <div style="background:#fff0f5;padding:24px;border-radius:12px;margin-bottom:20px;text-align:center">
-            <img src="https://snails-booking.vercel.app/logo.png" alt="Snails" style="width:180px;height:auto;display:block;margin:0 auto" />
-          </div>
-          <h2 style="color:#72243E;font-size:18px">You're all booked, ${client.name}!</h2>
-          <div style="background:#fff0f5;border:1px solid #ffd6e7;border-radius:10px;padding:16px;margin:16px 0">
-            <table style="width:100%;font-size:14px;border-collapse:collapse">
-              ${serviceRows}
-              <tr><td colspan="2" style="border-top:1px solid #ffd6e7;padding-top:8px"></td></tr>
-              <tr>
-                <td style="color:#72243E;font-weight:500;padding:6px 0">Total</td>
-                <td style="color:#d4537e;font-weight:500;text-align:right">${totalDur} min · ${formatPrice(totalPriceVal)}</td>
-              </tr>
-              <tr>
-                <td style="color:#993556;padding:6px 0">Date &amp; time</td>
-                <td style="color:#72243E;font-weight:500;text-align:right">${dateStr}</td>
-              </tr>
-            </table>
-          </div>
-          <p style="color:#993556;font-size:13px">Need to cancel or reschedule? Please give at least 24 hours notice.</p>
-        ${cancelToken ? `<p style="margin-top:10px;font-size:12px"><a href="${process.env.API_URL || 'https://snails-api-production.up.railway.app'}/bookings/${cancelToken}/cancel" style="color:#d4537e">Cancel this booking</a></p>` : ''}
-          <p style="color:#d4537e;font-size:12px;margin-top:24px">Snails nail studio — see you soon ✦</p>
-        </div>
-      `,
+      subject: 'Your appointment is confirmed ✦',
+      html: baseWrapper(`
+        <p style="font-size:16px;color:#3d3d3a;margin:0 0 8px">Hi ${client.name.split(' ')[0]},</p>
+        <p style="font-size:14px;color:#993556;margin:0 0 4px">Thank you for booking with us.</p>
+        <p style="font-size:14px;color:#993556;margin:0 0 20px">We're delighted to confirm your appointment at Snails Nail Studio.</p>
+        ${appointmentBox(detailRows)}
+        <p style="font-size:13px;color:#993556;margin:0 0 8px">We kindly ask that you arrive a few minutes early so we can begin your treatment on time.</p>
+        <p style="font-size:13px;color:#993556;margin:0 0 20px">Need to reschedule or cancel? Please let us know at least 24 hours in advance.</p>
+        ${cancelToken ? `<p style="font-size:12px;color:#d4537e;margin:0 0 20px"><a href="${process.env.API_URL || 'https://snails-api-production.up.railway.app'}/bookings/${cancelToken}/cancel" style="color:#d4537e">Cancel this booking</a></p>` : ''}
+        <p style="font-size:14px;color:#72243E;margin:0 0 4px">We can't wait to welcome you ✦</p>
+        <p style="font-size:13px;color:#993556;margin:0">Warmly,<br>Snails Nail Studio</p>
+      `),
     });
   }
 
   if (ADMIN_EMAIL) {
+    const adminRows = row('Client', client.name)
+      + row('Phone', client.phone || '—')
+      + row('Email', client.email || '—')
+      + divider()
+      + row('Service', serviceLabel)
+      + row('Date', dateStr)
+      + row('Time', timeStr)
+      + row('Duration', `${totalDur} min`)
+      + divider()
+      + row('Price', formatPrice(totalPriceVal));
+
     await resend.emails.send({
       from: FROM,
       to: ADMIN_EMAIL,
       subject: `New booking — ${client.name}`,
-      html: `
-        <div style="font-family:sans-serif;max-width:520px;margin:0 auto;color:#3d3d3a">
-          <h2 style="color:#72243E">New booking received</h2>
-          <div style="background:#fff0f5;border:1px solid #ffd6e7;border-radius:10px;padding:16px">
-            <table style="width:100%;font-size:14px;border-collapse:collapse">
-              <tr><td style="color:#993556;padding:6px 0">Client</td><td style="color:#72243E;font-weight:500;text-align:right">${client.name}</td></tr>
-              <tr><td style="color:#993556;padding:6px 0">Phone</td><td style="color:#72243E;text-align:right">${client.phone || '—'}</td></tr>
-              <tr><td style="color:#993556;padding:6px 0">Email</td><td style="color:#72243E;text-align:right">${client.email || '—'}</td></tr>
-              <tr><td colspan="2" style="border-top:1px solid #ffd6e7;padding-top:8px"></td></tr>
-              ${serviceRows}
-              <tr><td colspan="2" style="border-top:1px solid #ffd6e7;padding-top:8px"></td></tr>
-              <tr><td style="color:#72243E;font-weight:500;padding:6px 0">Total</td><td style="color:#d4537e;font-weight:500;text-align:right">${totalDur} min · ${formatPrice(totalPriceVal)}</td></tr>
-              <tr><td style="color:#993556;padding:6px 0">Date &amp; time</td><td style="color:#72243E;font-weight:500;text-align:right">${dateStr}</td></tr>
-            </table>
-          </div>
-        </div>
-      `,
+      html: baseWrapper(`
+        <p style="font-size:16px;font-weight:500;color:#72243E;margin:0 0 16px">New booking received</p>
+        ${appointmentBox(adminRows)}
+      `),
     });
   }
 }
 
-// FIX: sendCancellationEmail now accepts services[] array for multi-service bookings
 async function sendCancellationEmail({ client, services, service, booking }) {
   if (!client.email) return;
-  const dateStr    = formatDate(booking.booked_at);
-  const allServices = normalizeServices(services, service);
-  const serviceLabel = allServices.length > 0
-    ? allServices.map(s => s.name).join(' + ')
-    : 'your appointment';
+  const allServices  = normalizeServices(services, service);
+  const serviceLabel = allServices.length > 0 ? allServices.map(s => s.name).join(' + ') : 'your appointment';
+  const dateStr      = formatDate(booking.booked_at);
+  const timeStr      = formatTime(booking.booked_at);
+
+  const detailRows = row('Service', serviceLabel)
+    + row('Date', dateStr)
+    + row('Time', timeStr);
 
   await resend.emails.send({
     from: FROM,
     to: client.email,
-    subject: `Your Snails booking has been cancelled`,
-    html: `
-      <div style="font-family:sans-serif;max-width:520px;margin:0 auto;color:#3d3d3a">
-        <div style="background:#fff0f5;padding:24px;border-radius:12px;margin-bottom:20px;text-align:center">
-          <img src="https://snails-booking.vercel.app/logo.png" alt="Snails" style="width:180px;height:auto;display:block;margin:0 auto" />
-        </div>
-        <h2 style="color:#72243E">Booking cancelled</h2>
-        <p style="color:#993556">Your appointment for <strong>${serviceLabel}</strong> on ${dateStr} has been cancelled.</p>
-        <p style="color:#993556;font-size:13px;margin-top:12px">Want to rebook? Visit our booking page.</p>
-        <p style="color:#d4537e;font-size:12px;margin-top:24px">Snails nail studio ✦</p>
-      </div>
-    `,
+    subject: 'Appointment cancelled',
+    html: baseWrapper(`
+      <p style="font-size:16px;color:#3d3d3a;margin:0 0 8px">Hi ${client.name.split(' ')[0]},</p>
+      <p style="font-size:14px;color:#993556;margin:0 0 20px">This email confirms that your appointment has been cancelled.</p>
+      ${appointmentBox(detailRows)}
+      <p style="font-size:14px;color:#993556;margin:0 0 8px">We hope to see you again soon.</p>
+      <p style="font-size:14px;color:#993556;margin:0 0 20px">Whenever you're ready, you can easily book a new appointment with us.</p>
+      <p style="font-size:14px;color:#72243E;margin:0 0 4px">With love, Snails Nail Studio ✦</p>
+    `),
   });
 }
 

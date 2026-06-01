@@ -44,4 +44,18 @@ router.delete('/:id', requireAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
+router.delete('/:id/permanent', requireAuth, async (req, res) => {
+  try {
+    const bookings = await db.query(
+      `SELECT COUNT(*) FROM booking_services WHERE service_id = $1`,
+      [req.params.id]
+    );
+    if (parseInt(bookings.rows[0].count) > 0) {
+      return res.status(400).json({ error: 'Cannot delete a service that has bookings. Disable it instead.' });
+    }
+    await db.query('DELETE FROM services WHERE id = $1', [req.params.id]);
+    res.json({ message: 'Service deleted' });
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
 module.exports = router;
