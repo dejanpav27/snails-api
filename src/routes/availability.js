@@ -79,6 +79,18 @@ router.get('/', async (req, res) => {
       [dayStart.toISOString(), dayEnd.toISOString()]
     );
 
+    // Check blocked slots
+    const blockedResult = await db.query(
+      'SELECT * FROM blocked_slots WHERE date = $1',
+      [date]
+    );
+    const blocks = blockedResult.rows;
+
+    // If the whole day is blocked, return empty
+    if (blocks.some(b => b.is_full_day)) {
+      return res.json({ date, available_slots: [], closed: true });
+    }
+
     // 3 hour buffer for same-day bookings
     const now = new Date();
     const minimumStart = new Date(now.getTime() + 3 * 60 * 60 * 1000);
@@ -98,6 +110,15 @@ router.get('/', async (req, res) => {
         const bStart = new Date(b.booked_at).getTime();
         const bEnd   = bStart + b.duration_mins * 60 * 1000;
         if (slotStart < bEnd && slotEnd > bStart) return false;
+      }
+
+      for (const block of blocks) {
+        if (block.is_full_day) return false;
+        const [bsh, bsm] = block.start_time.split(':').map(Number);
+        const [beh, bem] = block.end_time.split(':').map(Number);
+        const blockStart = new Date(slot); blockStart.setHours(bsh, bsm, 0, 0);
+        const blockEnd   = new Date(slot); blockEnd.setHours(beh, bem, 0, 0);
+        if (slotStart < blockEnd.getTime() && slotEnd > blockStart.getTime()) return false;
       }
 
       return true;
