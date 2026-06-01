@@ -2,6 +2,21 @@ const router = require('express').Router();
 const db = require('../db');
 const { requireAuth } = require('../middleware/auth');
 
+// GET /clients/lookup?phone=... — public, returns name+email only for pre-fill
+router.get('/lookup', async (req, res) => {
+  const { phone } = req.query;
+  if (!phone || phone.trim().length < 5) return res.json(null);
+  try {
+    const result = await db.query(
+      `SELECT name, email FROM clients WHERE phone = $1 LIMIT 1`,
+      [phone.trim()]
+    );
+    res.json(result.rowCount > 0 ? result.rows[0] : null);
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 router.use(requireAuth);
 
 router.get('/', async (req, res) => {
