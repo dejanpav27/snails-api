@@ -269,6 +269,22 @@ router.patch('/:id/status', requireAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
+// PATCH /bookings/:id/notes — save admin notes
+router.patch('/:id/notes', requireAuth, async (req, res) => {
+  const { admin_notes } = req.body;
+  try {
+    const result = await db.query(
+      'UPDATE bookings SET admin_notes = $1 WHERE id = $2 RETURNING admin_notes',
+      [admin_notes ?? null, req.params.id]
+    );
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Booking not found' });
+    res.json({ admin_notes: result.rows[0].admin_notes });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // DELETE /bookings/:id — only cancelled bookings
 router.delete('/:id', requireAuth, async (req, res) => {
   try {
