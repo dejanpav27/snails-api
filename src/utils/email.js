@@ -150,4 +150,37 @@ async function sendCancellationEmail({ client, services, service, booking }) {
   });
 }
 
-module.exports = { sendBookingConfirmation, sendCancellationEmail };
+
+async function sendRescheduledEmail({ client, services, booking }) {
+  if (!client.email) return;
+  const allServices  = normalizeServices(services, null);
+  const serviceLabel = allServices.map(s => s.name).join(' + ');
+  const totalDur     = allServices.reduce((s, x) => s + x.duration_mins, 0);
+  const totalPrice   = allServices.reduce((s, x) => s + Number(x.price), 0);
+  const dateStr      = formatDate(booking.booked_at);
+  const timeStr      = formatTime(booking.booked_at);
+
+  const detailRows = row('Service', serviceLabel)
+    + row('New date', dateStr)
+    + row('New time', timeStr)
+    + row('Duration', `${totalDur} min`)
+    + divider()
+    + row('Price', formatPrice(totalPrice));
+
+  await resend.emails.send({
+    from: FROM,
+    to: client.email,
+    subject: 'Your appointment has been rescheduled ✦',
+    html: baseWrapper(`
+      <p style="font-size:16px;color:#3d3d3a;margin:0 0 8px">Hi ${client.name.split(' ')[0]},</p>
+      <p style="font-size:14px;color:#993556;margin:0 0 20px">Your appointment has been rescheduled. Here are your updated details:</p>
+      ${appointmentBox(detailRows)}
+      <p style="font-size:13px;color:#993556;margin:0 0 8px">We kindly ask that you arrive a few minutes early so we can begin your treatment on time.</p>
+      <p style="font-size:13px;color:#993556;margin:0 0 20px">If this time no longer works for you, please let us know as soon as possible.</p>
+      <p style="font-size:14px;color:#72243E;margin:0 0 4px">We look forward to seeing you ✦</p>
+      <p style="font-size:13px;color:#993556;margin:0">Warmly,<br>Snails Nail Studio</p>
+    `),
+  });
+}
+
+module.exports = { sendBookingConfirmation, sendCancellationEmail, sendRescheduledEmail };

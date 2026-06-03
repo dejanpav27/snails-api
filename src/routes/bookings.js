@@ -269,16 +269,37 @@ router.patch('/:id/status', requireAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
-// PATCH /bookings/:id/notes — save admin notes
-router.patch('/:id/notes', requireAuth, async (req, res) => {
-  const { admin_notes } = req.body;
+// PATCH /bookings/:id/reschedule
+router.patch('/:id/reschedule', requireAuth, async (req, res) => {
+  const { booked_at } = req.body;
+  if (!booked_at) return res.status(400).json({ error: 'booked_at is required' });
   try {
     const result = await db.query(
-      'UPDATE bookings SET admin_notes = $1 WHERE id = $2 RETURNING admin_notes',
-      [admin_notes ?? null, req.params.id]
+      'UPDATE bookings SET booked_at = $1 WHERE id = $2 RETURNING *',
+      [booked_at, req.params.id]
     );
     if (result.rowCount === 0) return res.status(404).json({ error: 'Booking not found' });
-    res.json({ admin_notes: result.rows[0].admin_notes });
+    const booking = result.rows[0];
+
+    const clientResult = await db.query('SELECT * FROM clients WHERE id = $1', [booking.client_id]);
+    const client = clientResult.rows[0];
+    const svcResult = await db.query(
+      `SELECT s.name, s.duration_mins, s.price FROM booking_services bs
+       JOIN services s ON s.id = bs.service_id WHERE bs.booking_id = $1 ORDER BY bs.sort_order`,
+      [booking.id]
+    );
+    const services = svcResult.rows.length > 0 ? svcResult.rows : [];
+
+    if (client && client.email && services.length > 0) {
+      try {
+        const { sendRescheduledEmail } = require('../utils/email');
+        await sendRescheduledEmail({ client, services, booking });
+      } catch (emailErr) {
+        console.error('Reschedule email failed:', emailErr.message);
+      }
+    }
+
+    res.json({ booking });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Server error' });
