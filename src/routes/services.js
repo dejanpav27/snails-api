@@ -4,7 +4,7 @@ const { requireAuth } = require('../middleware/auth');
 
 router.get('/', async (req, res) => {
   try {
-    const result = await db.query(`SELECT id, name, category, duration_mins, price FROM services WHERE active = TRUE ORDER BY category, price`);
+    const result = await db.query(`SELECT id, name, category, duration_mins, price, image_url FROM services WHERE active = TRUE ORDER BY category, price`);
     res.json(result.rows);
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
