@@ -11,6 +11,8 @@ const clientsRoutes      = require('./routes/clients');
 const scheduleRoutes     = require('./routes/schedule');
 const notificationsRoutes = require('./routes/notifications');
 const blockedSlotsRoutes  = require('./routes/blockedSlots');
+const analyticsRoutes     = require('./routes/analytics');
+const galleryRoutes       = require('./routes/gallery');
 const { runReminders }   = require('./utils/scheduler');
 
 const app = express();
@@ -42,6 +44,8 @@ app.use('/clients',      clientsRoutes);
 app.use('/schedule',     scheduleRoutes);
 app.use('/notifications',   notificationsRoutes);
 app.use('/blocked-slots',   blockedSlotsRoutes);
+app.use('/analytics',       analyticsRoutes);
+app.use('/gallery',         galleryRoutes);
 
 app.use((_req, res) => res.status(404).json({ error: 'Route not found' }));
 app.use((err, _req, res, _next) => { console.error('Unhandled error:', err); res.status(500).json({ error: 'Internal server error' }); });
