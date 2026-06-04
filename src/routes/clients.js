@@ -107,3 +107,23 @@ router.patch('/:id', async (req, res) => {
 });
 
 module.exports = router;
+
+// DELETE /clients/:id — admin only, blocks if client has non-cancelled bookings
+router.delete('/:id', requireAuth, async (req, res) => {
+  try {
+    const bookings = await db.query(
+      `SELECT COUNT(*) FROM bookings WHERE client_id = $1 AND status NOT IN ('cancelled', 'no_show')`,
+      [req.params.id]
+    );
+    if (parseInt(bookings.rows[0].count) > 0) {
+      return res.status(400).json({ error: 'Cannot delete a client with active or confirmed bookings. Cancel their bookings first.' });
+    }
+    await db.query('DELETE FROM bookings WHERE client_id = $1', [req.params.id]);
+    await db.query('DELETE FROM clients WHERE id = $1', [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
