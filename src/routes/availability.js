@@ -112,6 +112,15 @@ router.get('/', async (req, res) => {
         if (slotStart < bEnd && slotEnd > bStart) return false;
       }
 
+      // Block break time from schedule
+      if (schedule.break_start && schedule.break_end) {
+        const [bsh, bsm] = schedule.break_start.split(':').map(Number);
+        const [beh, bem] = schedule.break_end.split(':').map(Number);
+        const breakStart = new Date(slot); breakStart.setHours(bsh, bsm, 0, 0);
+        const breakEnd   = new Date(slot); breakEnd.setHours(beh, bem, 0, 0);
+        if (slotStart < breakEnd.getTime() && slotEnd > breakStart.getTime()) return false;
+      }
+
       for (const block of blocks) {
         if (block.is_full_day) return false;
         const [bsh, bsm] = block.start_time.split(':').map(Number);
