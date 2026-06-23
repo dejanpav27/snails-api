@@ -4,14 +4,14 @@ const { requireAuth } = require('../middleware/auth');
 
 router.get('/', async (req, res) => {
   try {
-    const result = await db.query(`SELECT id, name, category, duration_mins, price, image_url FROM services WHERE active = TRUE ORDER BY category, created_at ASC`);
+    const result = await db.query(`SELECT id, name, category, duration_mins, price, image_url FROM services WHERE active = TRUE ORDER BY category, price`);
     res.json(result.rows);
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
 router.get('/all', requireAuth, async (req, res) => {
   try {
-    const result = await db.query('SELECT * FROM services ORDER BY category, created_at ASC');
+    const result = await db.query('SELECT * FROM services ORDER BY category, price');
     res.json(result.rows);
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
@@ -55,6 +55,16 @@ router.delete('/:id/permanent', requireAuth, async (req, res) => {
     }
     await db.query('DELETE FROM services WHERE id = $1', [req.params.id]);
     res.json({ message: 'Service deleted' });
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+
+// PATCH /services/:id/sort — update sort_order
+router.patch('/:id/sort', requireAuth, async (req, res) => {
+  const { sort_order } = req.body;
+  try {
+    await db.query('UPDATE services SET sort_order = $1 WHERE id = $2', [sort_order, req.params.id]);
+    res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
