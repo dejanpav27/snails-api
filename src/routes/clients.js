@@ -106,6 +106,19 @@ router.patch('/:id', async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
+
+// PATCH /clients/:id/avatar
+router.patch('/:id/avatar', requireAuth, async (req, res) => {
+  const { avatar_url } = req.body;
+  try {
+    const result = await db.query(
+      'UPDATE clients SET avatar_url = $1 WHERE id = $2 RETURNING avatar_url',
+      [avatar_url || null, req.params.id]
+    );
+    res.json({ avatar_url: result.rows[0].avatar_url });
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
 module.exports = router;
 
 // DELETE /clients/:id — admin only, blocks if client has non-cancelled bookings
